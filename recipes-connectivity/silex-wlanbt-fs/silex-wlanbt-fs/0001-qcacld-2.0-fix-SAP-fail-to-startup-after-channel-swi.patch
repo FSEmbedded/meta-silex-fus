@@ -1,0 +1,34 @@
+From bb92f3f011b7b125a61ac948b576f518cee03bb3 Mon Sep 17 00:00:00 2001
+Message-Id: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: Miaoqing Pan <miaoqing@codeaurora.org>
+Date: Thu, 26 Dec 2019 09:58:14 +0800
+Subject: [PATCH 01/16] qcacld-2.0: fix SAP fail to startup after channel
+ switch
+
+After channel switch finished, the 'staId' element is uninitialized
+for 'roam_info' in sme_ProcessChannelChangeResp(), the invalid 'staId'
+will cause fail to startup BSS.
+
+Tested HW: QCA9377
+CRs-Fixed: 2577712
+Change-Id: I98bc5ebd4d7efbefbba05786a03d7cddfb067a18
+---
+ CORE/SME/src/sme_common/sme_Api.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/CORE/SME/src/sme_common/sme_Api.c b/CORE/SME/src/sme_common/sme_Api.c
+index c58b007..ea84279 100644
+--- a/CORE/SME/src/sme_common/sme_Api.c
++++ b/CORE/SME/src/sme_common/sme_Api.c
+@@ -15307,6 +15307,8 @@ eHalStatus sme_ProcessChannelChangeResp(tpAniSirGlobal pMac,
+     roam_info = vos_mem_malloc(sizeof(*roam_info));
+     if (!roam_info)
+         return eHAL_STATUS_FAILED_ALLOC;
++    vos_mem_zero(roam_info, sizeof(*roam_info));
++
+     roam_info->channelChangeRespEvent =
+         (tSirChanChangeResponse *)vos_mem_malloc(
+                                 sizeof(tSirChanChangeResponse));
+-- 
+2.14.5
+

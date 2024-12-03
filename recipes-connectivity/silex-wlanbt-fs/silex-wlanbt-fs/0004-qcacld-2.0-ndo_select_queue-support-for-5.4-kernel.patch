@@ -1,0 +1,77 @@
+From 6aec9d4e9fc7b9b336ee035cd10c32ad9b3f76d2 Mon Sep 17 00:00:00 2001
+Message-Id: <6aec9d4e9fc7b9b336ee035cd10c32ad9b3f76d2.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: bings <bings@codeaurora.org>
+Date: Mon, 6 Apr 2020 12:08:58 +0800
+Subject: [PATCH 04/16] qcacld-2.0: ndo_select_queue support for 5.4 kernel
+
+In the 5.4 Linux kernel, the ndo_select_queue function signature has
+changed. Add support for it under the kernel version compilation flag.
+
+Change-Id: Ib0f193b9e2981ebc377f1c61b1b29928c7b3d0ae
+CRs-Fixed: 2657520
+---
+ CORE/HDD/inc/wlan_hdd_wmm.h  | 7 +++++--
+ CORE/HDD/src/wlan_hdd_main.c | 5 ++++-
+ CORE/HDD/src/wlan_hdd_wmm.c  | 5 ++++-
+ 3 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/CORE/HDD/inc/wlan_hdd_wmm.h b/CORE/HDD/inc/wlan_hdd_wmm.h
+index f5fdd86..2ece071 100644
+--- a/CORE/HDD/inc/wlan_hdd_wmm.h
++++ b/CORE/HDD/inc/wlan_hdd_wmm.h
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2011-2012,2014, 2016, 2019 The Linux Foundation. All rights reserved.
++ * Copyright (c) 2011-2012,2014, 2016, 2019-2020 The Linux Foundation. All rights reserved.
+  *
+  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+  *
+@@ -267,7 +267,10 @@ v_U16_t hdd_wmm_select_queue(struct net_device * dev, struct sk_buff *skb);
+ 
+   @return         : Qdisc queue index
+   ===========================================================================*/
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
++uint16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb,
++                                  struct net_device *sb_dev);
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0))
+ uint16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb,
+                                   struct net_device *sb_dev,
+                                   select_queue_fallback_t fallback);
+diff --git a/CORE/HDD/src/wlan_hdd_main.c b/CORE/HDD/src/wlan_hdd_main.c
+index 3738635..14e042a 100644
+--- a/CORE/HDD/src/wlan_hdd_main.c
++++ b/CORE/HDD/src/wlan_hdd_main.c
+@@ -10942,7 +10942,10 @@ static void hdd_set_multicast_list(struct net_device *dev)
+   \return - ac, Queue Index/access category corresponding to UP in IP header
+ 
+   --------------------------------------------------------------------------*/
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
++uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
++			  struct net_device *sb_dev)
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+ uint16_t hdd_select_queue(struct net_device *dev, struct sk_buff *skb,
+ 			  struct net_device *sb_dev,
+ 			  select_queue_fallback_t fallback)
+diff --git a/CORE/HDD/src/wlan_hdd_wmm.c b/CORE/HDD/src/wlan_hdd_wmm.c
+index 2064904..023b628 100644
+--- a/CORE/HDD/src/wlan_hdd_wmm.c
++++ b/CORE/HDD/src/wlan_hdd_wmm.c
+@@ -1837,7 +1837,10 @@ hdd_wmm_classify_pkt(hdd_adapter_t* pAdapter, struct sk_buff *skb,
+ 
+   @return         : Qdisc queue index
+   ===========================================================================*/
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
++uint16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb,
++				  struct net_device *sb_dev)
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0))
+ uint16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb,
+ 				  struct net_device *sb_dev,
+ 				  select_queue_fallback_t fallback)
+-- 
+2.14.5
+

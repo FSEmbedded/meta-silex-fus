@@ -1,0 +1,100 @@
+From e55a3e17265cb62bb59ff7390cc3119e37d35c3c Mon Sep 17 00:00:00 2001
+Message-Id: <e55a3e17265cb62bb59ff7390cc3119e37d35c3c.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: Tiger Yu <tfyu@codeaurora.org>
+Date: Wed, 17 Feb 2021 16:46:19 +0800
+Subject: [PATCH 15/16] qcacld-2.0: Add eapol checking for intra-bss fwd &
+ indicate in IPA exc path
+
+Dropping all eapol frames during intra-bss forwarding, and add eapol
+sanity checking when indicate the RX pakcets to the up layer in the IPA
+exception path.
+
+Change-Id: Ia8e21970526741c95128ef7b405094a4b9fd193e
+CRs-Fixed: 2868071
+---
+ CORE/HDD/src/wlan_hdd_ipa.c | 46 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+diff --git a/CORE/HDD/src/wlan_hdd_ipa.c b/CORE/HDD/src/wlan_hdd_ipa.c
+index 4e45772..4e3daec 100644
+--- a/CORE/HDD/src/wlan_hdd_ipa.c
++++ b/CORE/HDD/src/wlan_hdd_ipa.c
+@@ -3009,6 +3009,7 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
+ #endif
+ 	struct hdd_ipa_priv *hdd_ipa = ghdd_ipa;
+ 	unsigned int cpu_index;
++	hdd_context_t *pHddCtx = NULL;
+ 
+ 	if (!adapter || adapter->magic != WLAN_HDD_ADAPTER_MAGIC) {
+ 		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO_LOW, "Invalid adapter: 0x%pK",
+@@ -3024,6 +3025,36 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
+ 		return;
+ 	}
+ 
++	pHddCtx = (hdd_context_t *)adapter->pHddCtx;
++	if (pHddCtx->cfg_ini->gEnableSapEapolChecking &&
++		(adapter->device_mode == WLAN_HDD_SOFTAP ||
++		adapter->device_mode == WLAN_HDD_P2P_GO) &&
++		adf_nbuf_is_eapol_pkt(skb)) {
++
++		/* CR 2868053 */
++		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO,
++				"QSV2020005, dev, mode=%d, session=%u, %s, addr (%pM)",
++				adapter->device_mode,
++				adapter->sessionId,
++				adapter->dev->name,
++				adapter->dev->dev_addr);
++		HDD_IPA_LOG(VOS_TRACE_LEVEL_INFO,
++				"QSV2020005 pkt addr (%pM)",
++				skb->data);
++		if (adf_os_mem_cmp(adapter->dev->dev_addr,
++			skb->data, VOS_MAC_ADDR_SIZE)) {
++			/* CR 2868053, discard this EAPOL */
++			HDD_IPA_LOG(VOS_TRACE_LEVEL_ERROR,
++					"QSV2020005 discard invalid EAPOL frame, dev=%pM, "
++					"pkt_da=%pM",
++					adapter->dev->dev_addr,
++					skb->data);
++
++			adf_nbuf_free(skb);
++			return;
++		}
++	}
++
+ 	skb->destructor = hdd_ipa_uc_rt_debug_destructor;
+ 	skb->dev = adapter->dev;
+ 	skb->protocol = eth_type_trans(skb, skb->dev);
+@@ -3256,6 +3287,20 @@ static enum hdd_ipa_forward_type hdd_ipa_intrabss_forward(
+ 				"Forward packet to Tx (fw_desc=%d)", desc);
+ 		hdd_ipa->ipa_tx_forward++;
+ 
++		/*
++		* CR 2868053
++		* discard EAPOL frame for intrabss forwarding
++		*/
++		if (adf_nbuf_is_eapol_pkt(skb)) {
++			HDD_IPA_DP_LOG(VOS_TRACE_LEVEL_ERROR,
++					"QSV2020005 EAPOL forwarding discard \n");
++			/* Drop the packet*/
++			hdd_ipa->ipa_rx_internel_drop_count++;
++			hdd_ipa->ipa_rx_discard++;
++			ret = HDD_IPA_FORWARD_PKT_DISCARD;
++			goto out;
++		}
++
+ 		if ((desc & FW_RX_DESC_DISCARD_M)) {
+ 			xmit_status = hdd_softap_hard_start_xmit(
+ 							skb, adapter->dev);
+@@ -3274,6 +3319,7 @@ static enum hdd_ipa_forward_type hdd_ipa_intrabss_forward(
+ 			ret = HDD_IPA_FORWARD_PKT_LOCAL_STACK;
+ 		}
+ 
++out:
+ 		if (NETDEV_TX_OK == xmit_status) {
+ 			hdd_ipa->stats.num_tx_fwd_ok++;
+ 		} else {
+-- 
+2.14.5
+

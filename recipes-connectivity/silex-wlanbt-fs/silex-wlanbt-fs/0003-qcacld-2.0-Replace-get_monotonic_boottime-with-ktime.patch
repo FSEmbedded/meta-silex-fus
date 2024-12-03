@@ -1,0 +1,112 @@
+From 21026169500a4153f45210aa0eaeab65b4551aef Mon Sep 17 00:00:00 2001
+Message-Id: <21026169500a4153f45210aa0eaeab65b4551aef.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: bings <bings@codeaurora.org>
+Date: Tue, 7 Apr 2020 17:47:03 +0800
+Subject: [PATCH 03/16] qcacld-2.0: Replace get_monotonic_boottime() with
+ ktime_get_boottime()
+
+get_monotonic_boottime() and similar functions have been replaced with
+ktime_get_boottime() in newer driver versions. Change the calls to
+get_monotonic_boottime() in the qdf wrapper to ktime_get_boottime().
+
+Although ktime_get_boottime() can be used in all kernel version, driver
+only use it from kernel version 5.4, because we don't want to change
+platform driver to use ktime_get_boottime() for legacy kernel.
+
+Change-Id: Ifb94be36fca25ec71b2a98d9aeb67562144d98fe
+CRs-Fixed: 2657513
+---
+ CORE/HDD/src/wlan_hdd_cfg80211.c |  4 +---
+ CORE/VOSS/inc/vos_cnss.h         |  7 ++-----
+ CORE/VOSS/src/vos_api.c          | 10 ++++++++--
+ 3 files changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/CORE/HDD/src/wlan_hdd_cfg80211.c b/CORE/HDD/src/wlan_hdd_cfg80211.c
+index 7d8004d..f51bf8c 100644
+--- a/CORE/HDD/src/wlan_hdd_cfg80211.c
++++ b/CORE/HDD/src/wlan_hdd_cfg80211.c
+@@ -32513,7 +32513,6 @@ wlan_hdd_cfg80211_extscan_full_scan_result_event(void *ctx,
+ {
+ 	hdd_context_t *pHddCtx  = (hdd_context_t *)ctx;
+ 	struct sk_buff *skb;
+-	struct timespec ts;
+ 	int flags = vos_get_gfp_flags();
+ 	struct hdd_ext_scan_context *context;
+ 
+@@ -32549,8 +32548,7 @@ wlan_hdd_cfg80211_extscan_full_scan_result_event(void *ctx,
+ 	pData->ap.channel = vos_chan_to_freq(pData->ap.channel);
+ 	/* Android does not want the time stamp from the frame.
+ 	   Instead it wants a monotonic increasing value since boot */
+-	vos_get_monotonic_boottime_ts(&ts);
+-	pData->ap.ts = ((u64)ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
++	pData->ap.ts = vos_get_monotonic_boottime();
+ 	hddLog(LOG1, "AP Info: Timestamp %llu Ssid: %s "
+ 				"Bssid (" MAC_ADDRESS_STR ") "
+ 				"Channel %u "
+diff --git a/CORE/VOSS/inc/vos_cnss.h b/CORE/VOSS/inc/vos_cnss.h
+index 576b5ed..af55821 100644
+--- a/CORE/VOSS/inc/vos_cnss.h
++++ b/CORE/VOSS/inc/vos_cnss.h
+@@ -157,11 +157,6 @@ static inline int vos_wlan_pm_control(bool vote)
+ static inline void vos_lock_pm_sem(void) { return; }
+ static inline void vos_release_pm_sem(void) { return; }
+ 
+-static inline void vos_get_monotonic_bootime_ts(struct timespec *ts)
+-{
+-	get_monotonic_boottime(ts);
+-}
+-
+ static inline void vos_get_boottime_ts(struct timespec *ts)
+ {
+ 	ktime_get_ts(ts);
+@@ -235,10 +230,12 @@ static inline int vos_wlan_get_dfs_nol(void *info, u16 info_len)
+ 	return -EINVAL;
+ }
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+ static inline void vos_get_monotonic_boottime_ts(struct timespec *ts)
+ {
+ 	get_monotonic_boottime(ts);
+ }
++#endif
+ 
+ static inline void vos_schedule_recovery_work(struct device *dev) { return; }
+ 
+diff --git a/CORE/VOSS/src/vos_api.c b/CORE/VOSS/src/vos_api.c
+index 6ddc04f..0f73efe 100644
+--- a/CORE/VOSS/src/vos_api.c
++++ b/CORE/VOSS/src/vos_api.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
++ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+  *
+  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+  *
+@@ -2626,7 +2626,12 @@ out:
+  * Get kernel boot time.
+  * @return Time in microseconds
+  */
+-
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
++uint64_t vos_get_monotonic_boottime(void)
++{
++	return (uint64_t)ktime_to_us(ktime_get_boottime());
++}
++#else
+ v_U64_t vos_get_monotonic_boottime(void)
+ {
+ #ifdef CONFIG_CNSS
+@@ -2638,6 +2643,7 @@ v_U64_t vos_get_monotonic_boottime(void)
+    return ((v_U64_t)adf_os_ticks_to_msecs(adf_os_ticks()) * 1000);
+ #endif
+ }
++#endif
+ 
+ #ifdef FEATURE_WLAN_D0WOW
+ v_VOID_t vos_pm_control(v_BOOL_t vote)
+-- 
+2.14.5
+

@@ -1,0 +1,225 @@
+From 883d783a0e97b0def642cf26f46f391f7f79f241 Mon Sep 17 00:00:00 2001
+Message-Id: <883d783a0e97b0def642cf26f46f391f7f79f241.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: bings <bings@codeaurora.org>
+Date: Mon, 6 Apr 2020 11:27:50 +0800
+Subject: [PATCH 02/16] qcacld-2.0: Wake lock API changes to support various
+ kernel versions
+
+Kernel 5.4+ is returning created wake lock pointer which needs to be
+stored in driver wakelock structure, which needs to be used in
+acquire, release, and destroy APIs. This change updates the wake
+lock structure accordingly to handle both older and new kernels.
+
+Change-Id: Iabd612b2f6ca37b61828a12b70cc3b29be65a3ad
+CRs-Fixed: 2657507
+---
+ CORE/VOSS/inc/i_vos_lock.h |  1 +
+ CORE/VOSS/inc/vos_cnss.h   | 86 +++++++++++++++++++++++++++++++++-------------
+ CORE/VOSS/src/vos_lock.c   | 10 +++---
+ 3 files changed, 68 insertions(+), 29 deletions(-)
+
+diff --git a/CORE/VOSS/inc/i_vos_lock.h b/CORE/VOSS/inc/i_vos_lock.h
+index ba5e53b..095b90b 100644
+--- a/CORE/VOSS/inc/i_vos_lock.h
++++ b/CORE/VOSS/inc/i_vos_lock.h
+@@ -70,6 +70,7 @@ typedef spinlock_t vos_spin_lock_t;
+ 
+ typedef struct wlan_wake_lock {
+ 	struct wakeup_source lock;
++	struct wakeup_source *priv;
+ 	bool is_initialized;
+ } vos_wake_lock_t;
+ 
+diff --git a/CORE/VOSS/inc/vos_cnss.h b/CORE/VOSS/inc/vos_cnss.h
+index 51e1eaf..576b5ed 100644
+--- a/CORE/VOSS/inc/vos_cnss.h
++++ b/CORE/VOSS/inc/vos_cnss.h
+@@ -25,7 +25,10 @@
+ #ifndef _VOS_CNSS_H
+ #define _VOS_CNSS_H
+ 
++#include "vos_memory.h"
+ #include "vos_status.h"
++#include "i_vos_lock.h"
++
+ #ifdef CONFIG_CNSS
+ #include <net/cnss.h>
+ #endif
+@@ -85,32 +88,67 @@ static inline void vos_flush_delayed_work(void *dwork)
+ 	cancel_delayed_work_sync(dwork);
+ }
+ 
+-static inline void vos_pm_wake_lock_init(struct wakeup_source *ws,
+-					const char *name)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 80))
++static inline void vos_pm_wake_lock_init(vos_wake_lock_t *lock,
++					 const char *name)
++{
++	vos_mem_zero(lock, sizeof(*lock));
++	lock->priv = wakeup_source_register(lock->lock.dev, name);
++
++	lock->lock = *(lock->priv);
++}
++#else
++static inline void vos_pm_wake_lock_init(vos_wake_lock_t *lock,
++					 const char *name)
+ {
+-	wakeup_source_init(ws, name);
++	wakeup_source_init(&(lock->lock), name);
++	lock->priv = &(lock->lock);
+ }
++#endif
+ 
+-static inline void vos_pm_wake_lock(struct wakeup_source *ws)
++static inline void vos_pm_wake_lock(vos_wake_lock_t *lock)
+ {
+-	__pm_stay_awake(ws);
++	__pm_stay_awake(lock->priv);
+ }
+ 
+-static inline void vos_pm_wake_lock_timeout(struct wakeup_source *ws,
+-					ulong msec)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
++static inline void vos_pm_wake_lock_timeout(vos_wake_lock_t *lock,
++					    ulong msec)
++{
++	pm_wakeup_ws_event(lock->priv, msec, true);
++}
++#else
++static inline void vos_pm_wake_lock_timeout(vos_wake_lock_t *lock,
++					    ulong msec)
+ {
+-	 __pm_wakeup_event(ws, msec);
++	 __pm_wakeup_event(&(lock->lock), msec);
+ }
++#endif
+ 
+-static inline void vos_pm_wake_lock_release(struct wakeup_source *ws)
++static inline void vos_pm_wake_lock_release(vos_wake_lock_t *lock)
+ {
+-	__pm_relax(ws);
++	__pm_relax(lock->priv);
+ }
+ 
+-static inline void vos_pm_wake_lock_destroy(struct wakeup_source *ws)
++/**
++ * vos_pm_wake_lock_destroy() - destroys a wake lock
++ * @lock: The wake lock to destroy
++ *
++ * Return:
++ * QDF status success: if wake lock is acquired
++ * QDF status failure: if wake lock was not acquired
++ */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 80))
++static inline void vos_pm_wake_lock_destroy(vos_wake_lock_t *lock)
+ {
+-	wakeup_source_trash(ws);
++	wakeup_source_unregister(lock->priv);
+ }
++#else
++static inline void vos_pm_wake_lock_destroy(vos_wake_lock_t * lock)
++{
++	wakeup_source_trash(&(lock->lock));
++}
++#endif
+ 
+ static inline int vos_wlan_pm_control(bool vote)
+ {
+@@ -275,31 +313,31 @@ static inline void vos_flush_delayed_work(void *dwork)
+ 	cnss_flush_delayed_work(dwork);
+ }
+ 
+-static inline void vos_pm_wake_lock_init(struct wakeup_source *ws,
+-					const char *name)
++static inline void vos_pm_wake_lock_init(vos_wake_lock_t *lock,
++					 const char *name)
+ {
+-	cnss_pm_wake_lock_init(ws, name);
++	cnss_pm_wake_lock_init(&(lock->lock), name);
+ }
+ 
+-static inline void vos_pm_wake_lock(struct wakeup_source *ws)
++static inline void vos_pm_wake_lock(vos_wake_lock_t *lock)
+ {
+-	cnss_pm_wake_lock(ws);
++	cnss_pm_wake_lock(&(lock->lock));
+ }
+ 
+-static inline void vos_pm_wake_lock_timeout(struct wakeup_source *ws,
+-					ulong msec)
++static inline void vos_pm_wake_lock_timeout(vos_wake_lock_t *lock,
++					    ulong msec)
+ {
+-	cnss_pm_wake_lock_timeout(ws, msec);
++	cnss_pm_wake_lock_timeout(&(lock->lock), msec);
+ }
+ 
+-static inline void vos_pm_wake_lock_release(struct wakeup_source *ws)
++static inline void vos_pm_wake_lock_release(vos_wake_lock_t *lock)
+ {
+-	cnss_pm_wake_lock_release(ws);
++	cnss_pm_wake_lock_release(&(lock->lock));
+ }
+ 
+-static inline void vos_pm_wake_lock_destroy(struct wakeup_source *ws)
++static inline void vos_pm_wake_lock_destroy(vos_wake_lock_t *lock)
+ {
+-	cnss_pm_wake_lock_destroy(ws);
++	cnss_pm_wake_lock_destroy(&(lock->lock));
+ }
+ 
+ static inline void vos_get_monotonic_boottime_ts(struct timespec *ts)
+diff --git a/CORE/VOSS/src/vos_lock.c b/CORE/VOSS/src/vos_lock.c
+index 4dcb339..2f0ec63 100644
+--- a/CORE/VOSS/src/vos_lock.c
++++ b/CORE/VOSS/src/vos_lock.c
+@@ -504,7 +504,7 @@ VOS_STATUS vos_spin_lock_destroy(vos_spin_lock_t *pLock)
+ VOS_STATUS vos_wake_lock_init(vos_wake_lock_t *pLock, const char *name)
+ {
+ 	if (!pLock->is_initialized) {
+-		vos_pm_wake_lock_init(&pLock->lock, name);
++		vos_pm_wake_lock_init(pLock, name);
+ 		pLock->is_initialized = true;
+ 
+ 		return VOS_STATUS_SUCCESS;
+@@ -549,7 +549,7 @@ VOS_STATUS vos_wake_lock_acquire(vos_wake_lock_t *pLock,
+ 		vos_log_wlock_diag(reason, vos_wake_lock_name(pLock),
+ 				WIFI_POWER_EVENT_DEFAULT_WAKELOCK_TIMEOUT,
+ 				WIFI_POWER_EVENT_WAKELOCK_TAKEN);
+-		vos_pm_wake_lock(&pLock->lock);
++		vos_pm_wake_lock(pLock);
+ 		return VOS_STATUS_SUCCESS;
+         } else {
+ 		VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+@@ -583,7 +583,7 @@ VOS_STATUS vos_wake_lock_timeout_acquire(vos_wake_lock_t *pLock, v_U32_t msec,
+ 				vos_wake_lock_name(pLock), msec,
+ 				WIFI_POWER_EVENT_WAKELOCK_TAKEN);
+ 		}
+-		vos_pm_wake_lock_timeout(&pLock->lock, msec);
++		vos_pm_wake_lock_timeout(pLock, msec);
+ 		return VOS_STATUS_SUCCESS;
+         } else {
+ 			VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+@@ -607,7 +607,7 @@ VOS_STATUS vos_wake_lock_release(vos_wake_lock_t *pLock, uint32_t reason)
+ 		vos_log_wlock_diag(reason, vos_wake_lock_name(pLock),
+ 			WIFI_POWER_EVENT_DEFAULT_WAKELOCK_TIMEOUT,
+ 			WIFI_POWER_EVENT_WAKELOCK_RELEASED);
+-		vos_pm_wake_lock_release(&pLock->lock);
++		vos_pm_wake_lock_release(pLock);
+ 		return VOS_STATUS_SUCCESS;
+ 	} else {
+ 		VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+@@ -628,7 +628,7 @@ VOS_STATUS vos_wake_lock_release(vos_wake_lock_t *pLock, uint32_t reason)
+ VOS_STATUS vos_wake_lock_destroy(vos_wake_lock_t *pLock)
+ {
+ 	if (pLock->is_initialized) {
+-		vos_pm_wake_lock_destroy(&pLock->lock);
++		vos_pm_wake_lock_destroy(pLock);
+ 		pLock->is_initialized = false;
+ 		return VOS_STATUS_SUCCESS;
+ 	}
+-- 
+2.14.5
+

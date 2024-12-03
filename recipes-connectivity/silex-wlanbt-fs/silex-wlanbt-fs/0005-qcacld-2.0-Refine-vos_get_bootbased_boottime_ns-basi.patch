@@ -1,0 +1,40 @@
+From 95b52baa79716f9fdbaa2ee5d40287c606a64afd Mon Sep 17 00:00:00 2001
+Message-Id: <95b52baa79716f9fdbaa2ee5d40287c606a64afd.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: bings <bings@codeaurora.org>
+Date: Mon, 6 Apr 2020 12:50:37 +0800
+Subject: [PATCH 05/16] qcacld-2.0: Refine vos_get_bootbased_boottime_ns basing
+ on kernel
+
+kernel 5.3+ uses ktime_get_boottime_ns instead of ktime_get_boot_ns.
+
+Refine vos_get_bootbased_boottime_ns basing on kernel.
+
+Change-Id: If696bb93ed29a277d70731f11a570b9340a64a75
+CRs-Fixed: 2657548
+---
+ CORE/VOSS/src/vos_api.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/CORE/VOSS/src/vos_api.c b/CORE/VOSS/src/vos_api.c
+index 0f73efe..e32a4af 100644
+--- a/CORE/VOSS/src/vos_api.c
++++ b/CORE/VOSS/src/vos_api.c
+@@ -3253,7 +3253,12 @@ v_U64_t vos_get_monotonic_boottime_ns(void)
+ 	return timespec_to_ns(&ts);
+ }
+ 
+-#if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
++v_U64_t vos_get_bootbased_boottime_ns(void)
++{
++	return ktime_get_boottime_ns();
++}
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
+ v_U64_t vos_get_bootbased_boottime_ns(void)
+ {
+ 	return ktime_get_boot_ns();
+-- 
+2.14.5
+

@@ -1,0 +1,95 @@
+From c52a8490f600111fb77ca9e34976ec3cdba67c38 Mon Sep 17 00:00:00 2001
+Message-Id: <c52a8490f600111fb77ca9e34976ec3cdba67c38.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: lifeng <lifeng@codeaurora.org>
+Date: Thu, 15 Nov 2018 19:48:06 +0800
+Subject: [PATCH 09/16] qcacld-2.0: Fix sdio mbox corruption on rome card
+
+Host side check RTC status by reading CIS content to determine
+Mbox is really waking up and ready to send data. No time wasted
+right after Mbox wakeup and improve delay and jitter KPI.
+
+CRs-Fixed: 2346839
+Change-Id: If0e2c3e949d48a5d632e3f93ff2b39ae242c85bb
+---
+ CORE/SERVICES/HIF/sdio/linux/native_sdio/src/hif.c | 45 ++++++++++++++++++++--
+ 1 file changed, 41 insertions(+), 4 deletions(-)
+
+diff --git a/CORE/SERVICES/HIF/sdio/linux/native_sdio/src/hif.c b/CORE/SERVICES/HIF/sdio/linux/native_sdio/src/hif.c
+index bee125a..54015ce 100644
+--- a/CORE/SERVICES/HIF/sdio/linux/native_sdio/src/hif.c
++++ b/CORE/SERVICES/HIF/sdio/linux/native_sdio/src/hif.c
+@@ -81,6 +81,11 @@ struct bus_request_record bus_request_record_buf[BUS_REQ_RECORD_SIZE];
+ #ifdef HIF_MBOX_SLEEP_WAR
+ #define HIF_MIN_SLEEP_INACTIVITY_TIME_MS     50
+ #define HIF_SLEEP_DISABLE_UPDATE_DELAY 1
++#define HIF_CIS_RTC_STATE_ADDR 0x1138
++#define HIF_CIS_RTC_STATE_ON 0x01
++#define HIF_CIS_READ_WAIT_4_RTC_CYCLE_IN_US 125
++#define HIF_CIS_XTAL_SETTLE_DURATION_IN_US 1500
++#define HIF_CIS_READ_RETRY 10
+ #define HIF_IS_WRITE_REQUEST_MBOX1_TO_3(request) \
+                 ((request->request & HIF_WRITE)&& \
+                 (request->address >= 0x1000 && request->address < 0x1FFFF))
+@@ -1506,9 +1511,25 @@ HIF_sleep_entry(void *arg)
+     }
+ }
+ 
++static int HIFReadRTCState(HIF_DEVICE *device, unsigned char *state)
++{
++	unsigned char rtc_state = 0;
++	int ret = 0;
++
++	rtc_state = sdio_f0_readb(device->func, HIF_CIS_RTC_STATE_ADDR, &ret);
++	if (ret)
++		return ret;
++	*state = rtc_state & 0x3;
++
++	return ret;
++}
++
+ void
+ HIFSetMboxSleep(HIF_DEVICE *device, bool sleep, bool wait, bool cache)
+ {
++    unsigned char rtc_state = 0;
++    int ret = 0, retry = 0;
++
+     if (!device || !device->func|| !device->func->card) {
+         printk("HIFSetMboxSleep incorrect input arguments\n");
+         return;
+@@ -1530,11 +1551,27 @@ HIFSetMboxSleep(HIF_DEVICE *device, bool sleep, bool wait, bool cache)
+     __HIFReadWrite(device, FIFO_TIMEOUT_AND_CHIP_CONTROL,
+                    (A_UCHAR*)&device->init_sleep, 4,
+                    HIF_WR_SYNC_BYTE_INC, NULL);
+-    sdio_release_host(device->func);
+-     /*Wait for 1ms for the written value to take effect */
+-    if (wait) {
+-       adf_os_mdelay(HIF_SLEEP_DISABLE_UPDATE_DELAY);
++    /* Check RTC state_on before sending data, only do this for wakeup */
++    if (!sleep && wait) {
++        while(1) {
++            AR_DEBUG_ASSERT(retry < HIF_CIS_READ_RETRY);
++
++            /* Wait 4 RTC cycle before read CIS */
++            adf_os_udelay(HIF_CIS_READ_WAIT_4_RTC_CYCLE_IN_US);
++
++            ret = HIFReadRTCState(device, &rtc_state);
++            if(ret) {
++                printk("Read CIS failure\n");
++                break;
++            }
++            if (rtc_state == HIF_CIS_RTC_STATE_ON)
++                break;
++            /* Wait XTAL_SETTLE before read CIS next time */
++            adf_os_udelay(HIF_CIS_XTAL_SETTLE_DURATION_IN_US);
++            retry++;
++        }
+     }
++    sdio_release_host(device->func);
+     return;
+ }
+ #endif
+-- 
+2.14.5
+

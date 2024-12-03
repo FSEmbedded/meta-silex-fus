@@ -1,0 +1,40 @@
+From 35f358258eed46c02b5b437cb127a6bdd20a70d4 Mon Sep 17 00:00:00 2001
+Message-Id: <35f358258eed46c02b5b437cb127a6bdd20a70d4.1711648979.git.keller@fs-net.de>
+In-Reply-To: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+References: <bb92f3f011b7b125a61ac948b576f518cee03bb3.1711648979.git.keller@fs-net.de>
+From: Liangwei Dong <liangwei@codeaurora.org>
+Date: Tue, 2 Jun 2020 13:48:11 +0800
+Subject: [PATCH 10/16] qcacld-2.0: Initialize preauth node
+
+Initialize preauth node memory after allocated to
+avoid invalid content being used in protocol stack.
+
+Change-Id: Id66fee1bd3684aff2d94108c2b864e3f458fe7c0
+CRs-Fixed: 2701488
+---
+ CORE/MAC/src/pe/lim/limTimerUtils.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/CORE/MAC/src/pe/lim/limTimerUtils.c b/CORE/MAC/src/pe/lim/limTimerUtils.c
+index 73131b4..b8b2c7c 100644
+--- a/CORE/MAC/src/pe/lim/limTimerUtils.c
++++ b/CORE/MAC/src/pe/lim/limTimerUtils.c
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2011-2016, 2019 The Linux Foundation. All rights reserved.
++ * Copyright (c) 2011-2016, 2019-2020 The Linux Foundation. All rights reserved.
+  *
+  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
+  *
+@@ -599,6 +599,8 @@ limCreateTimers(tpAniSirGlobal pMac)
+             limLog(pMac, LOGP, FL("AllocateMemory failed!"));
+             goto err_timer;
+         }
++	vos_mem_zero(pMac->lim.gLimPreAuthTimerTable.pTable[i],
++		     sizeof(tLimPreAuthNode));
+     }
+ 
+     limInitPreAuthTimerTable(pMac, &pMac->lim.gLimPreAuthTimerTable);
+-- 
+2.14.5
+
