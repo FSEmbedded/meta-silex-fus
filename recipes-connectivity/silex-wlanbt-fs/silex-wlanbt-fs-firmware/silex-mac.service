@@ -1,0 +1,12 @@
+[Unit]
+Description= Set Silex Wlan chip MAC adress
+Before=sysinit.target
+After=local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=simple
+ExecStart=/lib/firmware/wlan/S02silex start
+
+[Install]
+WantedBy=sysinit.target
