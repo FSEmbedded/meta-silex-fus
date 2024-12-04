@@ -1,0 +1,31 @@
+From 4a05e4bcc26b9c5cf162c6c2c237a453f9dd80ea Mon Sep 17 00:00:00 2001
+Message-Id: <4a05e4bcc26b9c5cf162c6c2c237a453f9dd80ea.1733318348.git.gerbach@fs-net.de>
+From: Philipp Gerbach <gerbach@fs-net.de>
+Date: Wed, 4 Dec 2024 14:18:49 +0100
+Subject: [PATCH] Fix building error for Kernel >=5.15.150
+
+https://github.com/torvalds/linux/commit/b5f0de6df6dce8d641ef58ef7012f3304dffb9a1
+---
+ CORE/HDD/src/wlan_hdd_assoc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/CORE/HDD/src/wlan_hdd_assoc.c b/CORE/HDD/src/wlan_hdd_assoc.c
+index 3142721a6..190881e86 100644
+--- a/CORE/HDD/src/wlan_hdd_assoc.c
++++ b/CORE/HDD/src/wlan_hdd_assoc.c
+@@ -6454,7 +6454,11 @@ static int __iw_get_ap_address(struct net_device *dev,
+     }
+     else
+     {
+-        memset(wrqu->ap_addr.sa_data,0,sizeof(wrqu->ap_addr.sa_data));
++	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 150))
++		memset(wrqu->ap_addr.sa_data,0,sizeof(wrqu->ap_addr.sa_data_min));
++	#else
++		memset(wrqu->ap_addr.sa_data,0,sizeof(wrqu->ap_addr.sa_data));
++	#endif
+     }
+     EXIT();
+     return 0;
+-- 
+2.40.1
+

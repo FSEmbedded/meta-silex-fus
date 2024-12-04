@@ -1,0 +1,70 @@
+From 8d1a39fd72176f1b97f4af4890eb4f78e0b6243f Mon Sep 17 00:00:00 2001
+Message-Id: <8d1a39fd72176f1b97f4af4890eb4f78e0b6243f.1733827721.git.gerbach@fs-net.de>
+From: Philipp Gerbach <gerbach@fs-net.de>
+Date: Tue, 10 Dec 2024 11:48:30 +0100
+Subject: [PATCH] Fix stdarg.h inclusion error
+
+stdarg.h is included from linux and from the toolchain. This leads to
+redefine errors of some defines. Use acgcc.h which checks if it's a
+---
+ CORE/MAC/src/include/utilsApi.h        | 6 +++++-
+ CORE/SYS/legacy/src/utils/src/dot11f.c | 4 ++++
+ CORE/SYS/legacy/src/utils/src/logApi.c | 4 ++++
+ 3 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/CORE/MAC/src/include/utilsApi.h b/CORE/MAC/src/include/utilsApi.h
+index d81ee0043..c83e019e9 100644
+--- a/CORE/MAC/src/include/utilsApi.h
++++ b/CORE/MAC/src/include/utilsApi.h
+@@ -39,11 +39,15 @@
+ #ifndef __UTILSAPI_H
+ #define __UTILSAPI_H
+ 
+-#include <stdarg.h>
+ #include <sirCommon.h>
+ #include "aniGlobal.h"
+ #include "utilsGlobal.h"
+ #include "VossWrapper.h"
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
++#include <acpi/platform/acgcc.h>
++#else
++#include <stdarg.h>
++#endif
+ 
+ #define LOG_INDEX_FOR_MODULE( modId ) ( ( modId ) - LOG_FIRST_MODULE_ID )
+ #define GET_MIN_VALUE(__val1, __val2) ((__val1 < __val2) ? __val1 : __val2)
+diff --git a/CORE/SYS/legacy/src/utils/src/dot11f.c b/CORE/SYS/legacy/src/utils/src/dot11f.c
+index 63885c021..341697803 100644
+--- a/CORE/SYS/legacy/src/utils/src/dot11f.c
++++ b/CORE/SYS/legacy/src/utils/src/dot11f.c
+@@ -117,7 +117,11 @@ typedef struct sIEDefn {
+ #ifndef DOT11F_HAVE_LOG_MACROS
+ 
+ #include <stdio.h>
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
++#include <acpi/platform/acgcc.h>
++#else
+ #include <stdarg.h>
++#endif
+ 
+ #ifndef DOT11F_LOG_GATE
+ #   define DOT11F_LOG_GATE FRLOGW
+diff --git a/CORE/SYS/legacy/src/utils/src/logApi.c b/CORE/SYS/legacy/src/utils/src/logApi.c
+index 57636888a..5823f0f78 100644
+--- a/CORE/SYS/legacy/src/utils/src/logApi.c
++++ b/CORE/SYS/legacy/src/utils/src/logApi.c
+@@ -41,7 +41,11 @@
+ #include <utilsApi.h>
+ #include <wlan_qct_wda.h>
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
++#include <acpi/platform/acgcc.h>
++#else
+ #include <stdarg.h>
++#endif
+ #include "utilsGlobal.h"
+ #include "macInitApi.h"
+ #include "palApi.h"
+-- 
+2.40.1
+

@@ -31,6 +31,8 @@ SRC_URI += "  \
 			file://0016-Revert-qcacld-2.0-Add-regdb.patch \
 			file://0017-qcacld-2.0-Refactor-cld-regdb-feature.patch \
 			file://0018-Support-newer-kernel-versions-avoid-compiler-warning.patch \
+			file://0019-Fix-building-error-for-Kernel-5.15.150.patch \
+			file://0020-Fix-stdarg.h-inclusion-error.patch \
 "
 
 S = "${WORKDIR}/git"
